@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  ServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - arm64
+      Events:
+        CatchAll:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GrongishApi
+    Metadata:
+      DockerContext: ./
+      Dockerfile: Dockerfile
+
+  GrongishApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Description: API for translating Grongish
