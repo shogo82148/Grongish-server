@@ -7,7 +7,7 @@ GRONGISH_CHARS = set(u'ガギグゲゴザジズゼゾダヂヅデドバビブベ
 
 def lambda_handler(event, context):
     text = event.get('text', '')
-    retranslation = event.get('retranslation')
+    retranslation = str(event.get('retranslation') or '').strip().lower() in ('1', 'true', 'yes', 'on')
     from_lang = (event.get('from') or 'auto').lower()
 
     # auto detect the language of text

@@ -100,9 +100,9 @@ Resources:
                 requestTemplates:
                   application/json: |
                     {
-                      "from": "$input.params('from')",
-                      "text": "$input.params('text')",
-                      "retranslation": "$input.params('retranslation')"
+                      "from": "$util.escapeJavaScript($input.params('from')).replaceAll("\\'", "'")",
+                      "text": "$util.escapeJavaScript($input.params('text')).replaceAll("\\'", "'")",
+                      "retranslation": "$util.escapeJavaScript($input.params('retranslation')).replaceAll("\\'", "'")"
                     }
                 cacheKeyParameters:
                   - method.request.querystring.from
