@@ -7,6 +7,7 @@ s3_prefix = "grongish-server"
 region = "ap-northeast-1"
 capabilities = "CAPABILITY_IAM"
 image_repositories = ["ServerFunction=445285296882.dkr.ecr.ap-northeast-1.amazonaws.com/grongishserverfc02d765/helloworldfunction19d43fc4repo"]
+parameter_overrides = "HostedZoneId=Z1TR8BQNS8S1I7"
 
 [default.global.parameters]
 region = "ap-northeast-1"

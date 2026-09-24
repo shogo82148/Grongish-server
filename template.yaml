@@ -1,5 +1,17 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
+Description: Grongish translation API
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+  DomainName:
+    Type: String
+    Default: grongish.shogo82148.com
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: Route 53 hosted zone ID of shogo82148.com
 
 Resources:
   ServerFunction:
@@ -8,16 +20,209 @@ Resources:
       PackageType: Image
       Architectures:
         - arm64
-      Events:
-        CatchAll:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref GrongishApi
+      MemorySize: 1024
+      Timeout: 30
     Metadata:
       DockerContext: ./
       Dockerfile: Dockerfile
 
-  GrongishApi:
-    Type: AWS::Serverless::HttpApi
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
     Properties:
-      Description: API for translating Grongish
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+
+  GrongishApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: Grongish
+      StageName: !Ref StageName
+      EndpointConfiguration:
+        Type: REGIONAL
+      Domain:
+        DomainName: !Ref DomainName
+        CertificateArn: !Ref Certificate
+        EndpointConfiguration: REGIONAL
+        SecurityPolicy: TLS_1_2
+        BasePath:
+          - /
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: Grongish
+          version: "1.0"
+        paths:
+          /translate:
+            get:
+              parameters:
+                - name: from
+                  in: query
+                  schema:
+                    type: string
+                - name: text
+                  in: query
+                  description: translate between Japanese and Grongish
+                  required: true
+                  schema:
+                    type: string
+                - name: retranslation
+                  in: query
+                  schema:
+                    type: string
+              responses:
+                "200":
+                  description: 200 response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: string
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/TranslateResult"
+              # app.py はプロキシ形式ではなく {"text": ..., "from": ..., "retranslation": ...} を
+              # そのまま受け取り、結果の dict を返すので、非プロキシ (AWS) 統合を使う
+              x-amazon-apigateway-integration:
+                type: aws
+                httpMethod: POST
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ServerFunction.Arn}/invocations"
+                passthroughBehavior: when_no_templates
+                contentHandling: CONVERT_TO_TEXT
+                requestParameters:
+                  integration.request.querystring.from: method.request.querystring.from
+                  integration.request.querystring.text: method.request.querystring.text
+                  integration.request.querystring.retranslation: method.request.querystring.retranslation
+                requestTemplates:
+                  application/json: |
+                    {
+                      "from": "$input.params('from')",
+                      "text": "$input.params('text')",
+                      "retranslation": "$input.params('retranslation')"
+                    }
+                cacheKeyParameters:
+                  - method.request.querystring.from
+                  - method.request.querystring.text
+                  - method.request.querystring.retranslation
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+            options:
+              responses:
+                "200": &CorsPreflightResponse
+                  description: 200 response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: string
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: mock
+                passthroughBehavior: when_no_match
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+
+          /swagger.yaml:
+            get:
+              responses:
+                "200":
+                  description: 200 response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: string
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              # API の仕様書は GitHub Pages で公開しているものをそのまま中継する
+              x-amazon-apigateway-integration:
+                type: http
+                httpMethod: GET
+                uri: https://shogo82148.github.io/Grongish/swagger.yaml
+                passthroughBehavior: when_no_match
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+            options:
+              responses:
+                "200": *CorsPreflightResponse
+              x-amazon-apigateway-integration:
+                type: mock
+                passthroughBehavior: when_no_match
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+
+        components:
+          schemas:
+            Empty:
+              title: Empty Schema
+              type: object
+            TranslateResult:
+              title: the result of translation
+              description: the result of translation
+              type: object
+              required:
+                - lang
+                - original
+                - translated
+              properties:
+                original:
+                  type: string
+                translated:
+                  type: array
+                  items:
+                    type: string
+                retranslated:
+                  type: array
+                  items:
+                    type: string
+                lang:
+                  type: string
+
+  ServerFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ServerFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${GrongishApi}/*/GET/translate"
+
+Outputs:
+  ApiEndpoint:
+    Description: Base URL of the Grongish API
+    Value: !Sub "https://${GrongishApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  CustomDomainEndpoint:
+    Description: URL of the Grongish API on the custom domain
+    Value: !Sub "https://${DomainName}"
